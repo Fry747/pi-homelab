@@ -1,0 +1,77 @@
+services:
+  unbound:
+    image: crazymax/unbound:latest
+    container_name: unbound
+    restart: unless-stopped
+    networks:
+      - dns_net
+    ports:
+      - target: 5053
+        published: 5053
+        protocol: tcp
+      - target: 5053
+        published: 5053
+        protocol: udp
+    volumes:
+      - "./unbound/config:/config:ro"
+    healthcheck:
+      test: ["CMD-SHELL", "drill @127.0.0.1 -p 5335 cloudflare.com >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  pihole:
+    image: pihole/pihole:latest
+    container_name: pihole
+    restart: unless-stopped
+    depends_on:
+      - unbound
+    networks:
+      - dns_net
+    ports:
+      # DNS Ports
+      - "53:53/tcp"
+      - "53:53/udp"
+      # No HTTP(s) port mappings required because the routing is going through traefik
+      # Default HTTP Port
+      - "80:80/tcp"
+      # Default HTTPs Port. FTL will generate a self-signed certificate
+      #- "443:443/tcp"
+      # Uncomment the line below if you are using Pi-hole as your DHCP server
+      #- "67:67/udp"
+      # Uncomment the line below if you are using Pi-hole as your NTP server
+      #- "123:123/udp"
+    environment:
+      # Set the appropriate timezone for your location (https://en.wikipedia.org/wiki/List_of_tz_database_time_zones), e.g:
+      TZ: "${TZ}"
+      # Set a password to access the web interface. Not setting one will result in a random password being assigned
+      FTLCONF_webserver_api_password: "${PIHOLE_WEBPASSWORD}"
+      # If using Docker's default `bridge` network setting the dns listening mode should be set to 'ALL'
+      FTLCONF_dns_listeningMode: "ALL"
+      # Pi-hole uses unbound internally
+      FTLCONF_dns_upstreams: "unbound#5053"
+      # Reverse server - If not configured as your DHCP server, Pi-hole typically won't be able to determine the names of devices on your local network. As a result, tables such as Top Clients will only show IP addresses.
+      FTLCONF_dns_revServers: "${PIHOLE_REV_SERVERS}"
+      # Optional: Cache size - The number of entries that the DNS resolver will keep in its cache. Setting this to a higher value can improve performance, but it will also use more memory. The default is 1000. Setting it to 0 will disable caching.
+      FTLCONF_dns_cache_size: "10000"
+      # Optional: Max concurrent queries - The maximum number of concurrent DNS queries that dnsmasq can handle. Setting this to a higher value can improve performance, but it will also use more memory. The default is 150. Setting it to 0 will allow an unlimited number of concurrent queries.
+      FTLCONF_dns_dnsmasq_max_concurrent_queries: "300"
+    # Volumes store your data between container upgrades
+    volumes:
+      # For persisting Pi-hole's databases and common configuration file
+      - './etc-pihole:/etc/pihole'
+      # Uncomment the below if you have custom dnsmasq config files that you want to persist. Not needed for most starting fresh with Pi-hole v6. If you're upgrading from v5 you and have used this directory before, you should keep it enabled for the first v6 container start to allow for a complete migration. It can be removed afterwards. Needs environment variable FTLCONF_misc_etc_dnsmasq_d: 'true'
+      #- './pihole/etc-dnsmasq.d:/etc/dnsmasq.d'
+    cap_add:
+      # See https://github.com/pi-hole/docker-pi-hole#note-on-capabilities
+      # Required if you are using Pi-hole as your DHCP server, else not needed
+      #- NET_ADMIN
+      # Required if you are using Pi-hole as your NTP client to be able to set the host's system time
+      #- SYS_TIME
+      # Optional, if Pi-hole should get some more processing time
+      - SYS_NICE
+
+networks:
+  dns_net:
+    driver: bridge
