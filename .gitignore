@@ -1,15 +1,181 @@
-# envs / secrets
-**/.env
-**/*.secret
-**/secrets/
+############################################
+# pi-homelab .gitignore
+# (Docker homelab repository)
+############################################
 
-# runtime data (optional – je nachdem ob du persisted configs versionieren willst)
-**/pihole/etc-pihole/*
-**/pihole/etc-dnsmasq.d/*
-**/homeassistant/config/*
-**/portainer_data/*
-
-# OS / editor
+# ------------------------------------------
+# OS / Editor / IDE
+# ------------------------------------------
 .DS_Store
+Thumbs.db
+desktop.ini
+
 .vscode/
 .idea/
+*.swp
+*.swo
+*.tmp
+*.bak
+*.old
+
+# ------------------------------------------
+# Logs (generic)
+# ------------------------------------------
+*.log
+logs/
+log/
+
+# ------------------------------------------
+# Environment files / secrets
+# ------------------------------------------
+.env
+.env.*
+!.env.example
+
+secrets/
+secret/
+*.secret
+*.key
+*.pem
+*.pfx
+*.p12
+*.crt
+*.csr
+
+# Allow README or example certs if needed
+!**/certs/README.md
+!**/certs/.gitkeep
+
+# ------------------------------------------
+# Docker / Compose runtime
+# ------------------------------------------
+docker-compose.override.yml
+**/.docker/
+
+# ------------------------------------------
+# Python cache (if scripts are added later)
+# ------------------------------------------
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+
+# ------------------------------------------
+# Home Assistant (VERY IMPORTANT)
+# ------------------------------------------
+containers/homeassistant/config/.storage/
+containers/homeassistant/config/home-assistant_v2.db
+containers/homeassistant/config/home-assistant_v2.db-shm
+containers/homeassistant/config/home-assistant_v2.db-wal
+containers/homeassistant/config/home-assistant.log*
+containers/homeassistant/config/backup/
+containers/homeassistant/config/backups/
+containers/homeassistant/config/tts/
+containers/homeassistant/config/deps/
+containers/homeassistant/config/.cloud/
+containers/homeassistant/config/.uuid
+containers/homeassistant/config/secrets.yaml
+containers/homeassistant/config/known_devices.yaml
+containers/homeassistant/config/*.db
+containers/homeassistant/config/*.db-shm
+containers/homeassistant/config/*.db-wal
+
+# Keep configuration.yaml and automations/scripts
+!containers/homeassistant/config/configuration.yaml
+!containers/homeassistant/config/automations.yaml
+!containers/homeassistant/config/scripts.yaml
+!containers/homeassistant/config/scenes.yaml
+
+# ------------------------------------------
+# Pi-hole (data should NOT be committed)
+# ------------------------------------------
+containers/dns/pihole/etc-pihole/*
+!containers/dns/pihole/etc-pihole/.gitkeep
+
+containers/dns/pihole/etc-dnsmasq.d/*
+!containers/dns/pihole/etc-dnsmasq.d/.gitkeep
+
+# If gravity/db files appear
+**/pihole/etc-pihole/gravity.db
+**/pihole/etc-pihole/pihole-FTL.db
+**/pihole/etc-pihole/pihole.log*
+**/pihole/etc-pihole/setupVars.conf
+
+# ------------------------------------------
+# Unbound (optional cache/runtime)
+# ------------------------------------------
+containers/dns/unbound/config/*.key
+containers/dns/unbound/config/*.pem
+containers/dns/unbound/config/var/
+containers/dns/unbound/config/root.key
+
+# ------------------------------------------
+# Mosquitto
+# ------------------------------------------
+containers/mqtt/mosquitto/data/*
+!containers/mqtt/mosquitto/data/.gitkeep
+
+containers/mqtt/mosquitto/log/*
+!containers/mqtt/mosquitto/log/.gitkeep
+
+# ------------------------------------------
+# InfluxDB (NEVER commit database)
+# ------------------------------------------
+containers/monitoring/influxdb/data/*
+!containers/monitoring/influxdb/data/.gitkeep
+
+containers/monitoring/influxdb/config/*
+!containers/monitoring/influxdb/config/.gitkeep
+
+# ------------------------------------------
+# Grafana (NEVER commit grafana database)
+# ------------------------------------------
+containers/monitoring/grafana/data/*
+!containers/monitoring/grafana/data/.gitkeep
+
+# ------------------------------------------
+# Portainer (never commit its internal DB)
+# ------------------------------------------
+containers/portainer/data/*
+containers/portainer/portainer_data/*
+portainer_data/
+
+# ------------------------------------------
+# Traefik (optional) - certificates & acme
+# ------------------------------------------
+containers/traefik/data/
+containers/traefik/acme.json
+containers/traefik/certs/*.key
+containers/traefik/certs/*.pem
+containers/traefik/certs/*.crt
+
+# Keep dynamic config templates if needed
+!containers/traefik/dynamic/*.yml
+!containers/traefik/dynamic/*.yaml
+
+# ------------------------------------------
+# Backups (local)
+# ------------------------------------------
+backup/
+backups/
+*.tar
+*.tar.gz
+*.zip
+*.bak
+
+# ------------------------------------------
+# Local exports
+# ------------------------------------------
+exports/
+*.csv
+*.json
+*.db
+
+# ------------------------------------------
+# Temporary runtime folders
+# ------------------------------------------
+tmp/
+temp/
+.cache/
