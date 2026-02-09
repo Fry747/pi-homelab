@@ -13,11 +13,13 @@ set -euo pipefail
 # - Installs to /opt/pi-homelab
 # - Bootstraps .env from .env.example (per compose dir), without overwriting existing .env
 # - Ensures bind-mount FILES exist (touch), directories already exist via .gitkeep in repo
+# - Generates secrets (Pi-hole / InfluxDB / Grafana) ONLY if values are missing/empty/CHANGEME*
+# - Prints generated secrets at the end (only those newly generated)
 # - Fixes ownership so you don't need sudo for day-to-day ops
 # -----------------------------------------------------------------------------
 
 # ====== CONFIG =============================================================
-REPO_OWNER="${REPO_OWNER:-Fry747}"
+REPO_OWNER="${REPO_OWNER:-fry747}"
 REPO_NAME="${REPO_NAME:-pi-homelab}"
 REPO_REF="${REPO_REF:-main}"             # branch/tag/commit
 INSTALL_DIR="${INSTALL_DIR:-/opt/pi-homelab}"
@@ -41,6 +43,87 @@ require_root() {
 
 need_cmd() {
   command -v "$1" >/dev/null 2>&1
+}
+
+# -----------------------------------------------------------------------------
+# Secret generation helpers
+# -----------------------------------------------------------------------------
+# We'll remember newly generated secrets and print them at the end.
+declare -A GENERATED_SECRETS
+
+# Generate a decent password (URL/ENV-safe enough)
+gen_password() {
+  if need_cmd openssl; then
+    openssl rand -base64 24 | tr -d '\n' | tr '/+=' 'aZ9'
+  else
+    head -c 24 /dev/urandom | base64 | tr -d '\n' | tr '/+=' 'aZ9'
+  fi
+}
+
+# Generate a long token (suitable for InfluxDB initial admin token)
+gen_token() {
+  if need_cmd openssl; then
+    openssl rand -base64 48 | tr -d '\n' | tr '/+=' '___'
+  else
+    head -c 48 /dev/urandom | base64 | tr -d '\n' | tr '/+=' '___'
+  fi
+}
+
+# Set KEY=VALUE in an env file if:
+# - KEY is missing OR
+# - current value is empty OR
+# - current value starts with "CHANGEME"
+# If we generated a new value, remember it in GENERATED_SECRETS.
+set_env_if_empty_or_changeme() {
+  local env_file="$1"
+  local key="$2"
+  local value="$3"
+  local origin="$4"   # label for output, e.g. "dns/PIHOLE_WEBPASSWORD"
+
+  # If key missing -> append
+  if ! grep -qE "^${key}=" "$env_file"; then
+    echo "${key}=${value}" >> "$env_file"
+    GENERATED_SECRETS["$origin"]="$value"
+    return 0
+  fi
+
+  # Extract current value
+  local cur
+  cur="$(grep -E "^${key}=" "$env_file" | head -n1 | cut -d= -f2- || true)"
+  # Strip surrounding quotes (if any)
+  cur="${cur%\"}"; cur="${cur#\"}"
+  cur="${cur%\'}"; cur="${cur#\'}"
+
+  if [[ -z "${cur}" || "${cur}" == CHANGEME* ]]; then
+    # Replace line
+    sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"
+    GENERATED_SECRETS["$origin"]="$value"
+  fi
+}
+
+# Apply secret generation per known stack envs
+generate_stack_secrets() {
+  local env_file="$1"
+  local dir
+  dir="$(dirname "$env_file")"
+
+  # DNS stack (.env located in containers/dns/.env)
+  if [[ "$dir" == *"/containers/dns" ]]; then
+    set_env_if_empty_or_changeme "$env_file" "PIHOLE_WEBPASSWORD" "$(gen_password)" "dns/PIHOLE_WEBPASSWORD"
+  fi
+
+  # Monitoring stack (.env located in containers/monitoring/.env)
+  if [[ "$dir" == *"/containers/monitoring" ]]; then
+    # Keep sane defaults if missing/changeme
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_USERNAME" "admin" "monitoring/INFLUXDB_USERNAME"
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_PASSWORD" "$(gen_password)" "monitoring/INFLUXDB_PASSWORD"
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_ORG" "pi-homelab" "monitoring/INFLUXDB_ORG"
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_BUCKET" "homeassistant" "monitoring/INFLUXDB_BUCKET"
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_ADMIN_TOKEN" "$(gen_token)" "monitoring/INFLUXDB_ADMIN_TOKEN"
+
+    set_env_if_empty_or_changeme "$env_file" "GRAFANA_ADMIN_USER" "admin" "monitoring/GRAFANA_ADMIN_USER"
+    set_env_if_empty_or_changeme "$env_file" "GRAFANA_ADMIN_PASSWORD" "$(gen_password)" "monitoring/GRAFANA_ADMIN_PASSWORD"
+  fi
 }
 
 install_docker() {
@@ -101,7 +184,6 @@ download_repo_tarball() {
   tar -xzf "${tmpdir}/repo.tar.gz" -C "$tmpdir"
 
   # Tarball root folder name is usually "${REPO_NAME}-${REPO_REF}"
-  # but for branches it can be "${REPO_NAME}-${REPO_REF}" reliably.
   local src_dir
   src_dir="$(find "$tmpdir" -maxdepth 1 -type d -name "${REPO_NAME}-*" | head -n1)"
   [[ -n "${src_dir:-}" ]] || die "Could not find extracted repo directory in tarball."
@@ -138,15 +220,18 @@ bootstrap_env_files() {
     dir="$(dirname "$env_example")"
     env_file="${dir}/.env"
 
-    if [[ -f "$env_file" ]]; then
-      continue
+    # Do not overwrite existing .env
+    if [[ ! -f "$env_file" ]]; then
+      cp -n "$env_example" "$env_file"
+      chown "${REAL_USER}:${REAL_GROUP}" "$env_file" || true
+      chmod 600 "$env_file" || true
+      log "Created: ${env_file} (from .env.example)"
     fi
 
-    cp -n "$env_example" "$env_file"
-    chown "${REAL_USER}:${REAL_GROUP}" "$env_file" || true
-    chmod 600 "$env_file" || true
-
-    log "Created: ${env_file} (from .env.example)"
+    # Always ensure secrets are set if missing/empty/CHANGEME*
+    if [[ -f "$env_file" ]]; then
+      generate_stack_secrets "$env_file"
+    fi
   done < <(find "${INSTALL_DIR}/containers" -type f -name ".env.example" -print0 2>/dev/null || true)
 }
 
@@ -179,13 +264,12 @@ ensure_bind_mount_files() {
       # If it ends with a slash, it's a dir (skip)
       [[ "$abs" == */ ]] && continue
 
-      # If it's clearly a directory in repo, skip (it should exist already)
+      # If it's clearly a directory in repo, skip
       if [[ -d "$abs" ]]; then
         continue
       fi
 
-      # Heuristic: treat as "file" if it has a filename component
-      # If parent dir missing (shouldn't happen with .gitkeep), create it.
+      # Create parent dir if missing (shouldn't happen with .gitkeep, but safe)
       local parent
       parent="$(dirname "$abs")"
       mkdir -p "$parent"
@@ -202,6 +286,48 @@ ensure_bind_mount_files() {
         | sed -E 's/^[[:space:]]*-[[:space:]]*//'
     )
   done < <(find "${INSTALL_DIR}/containers" -type f \( -name "docker-compose.yml" -o -name "compose.yml" \) -print0 2>/dev/null || true)
+}
+
+print_generated_secrets() {
+  if [[ "${#GENERATED_SECRETS[@]}" -eq 0 ]]; then
+    log "No new secrets generated (existing values were kept)."
+    return
+  fi
+
+  cat <<EOF
+
+===============================================================================
+🔐 Newly generated secrets (saved into the respective .env files)
+
+IMPORTANT:
+- Store these somewhere safe (password manager).
+- They are already written to the .env files with permissions 600.
+- Anyone with access to ${INSTALL_DIR} can potentially read them.
+
+EOF
+
+  # Stable-ish order (nice to read)
+  local keys=(
+    "dns/PIHOLE_WEBPASSWORD"
+    "monitoring/INFLUXDB_USERNAME"
+    "monitoring/INFLUXDB_PASSWORD"
+    "monitoring/INFLUXDB_ORG"
+    "monitoring/INFLUXDB_BUCKET"
+    "monitoring/INFLUXDB_ADMIN_TOKEN"
+    "monitoring/GRAFANA_ADMIN_USER"
+    "monitoring/GRAFANA_ADMIN_PASSWORD"
+  )
+
+  for k in "${keys[@]}"; do
+    if [[ -n "${GENERATED_SECRETS[$k]:-}" ]]; then
+      printf "  %-35s %s\n" "${k}:" "${GENERATED_SECRETS[$k]}"
+    fi
+  done
+
+  cat <<EOF
+===============================================================================
+
+EOF
 }
 
 print_next_steps() {
@@ -255,6 +381,8 @@ main() {
   bootstrap_env_files
   ensure_bind_mount_files
 
+  # Print secrets AFTER env bootstrap & any modifications
+  print_generated_secrets
   print_next_steps
 }
 

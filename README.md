@@ -1,226 +1,216 @@
 # pi-homelab
 
+![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi%20%2F%20ARM64%20%7C%20ARMv7-blue)
+![OS](https://img.shields.io/badge/os-Raspberry%20Pi%20OS%20(Debian)-green)
+![Compose](https://img.shields.io/badge/docker-compose-v2+-informational)
+![License](https://img.shields.io/badge/license-MIT-yellow)
+
 A lightweight, reproducible **Raspberry Pi homelab stack** built around **Docker Compose**.
 
-This repository provides a clean folder structure, ready-to-run Compose files, and an optional installation helper script to quickly bootstrap a fresh Raspberry Pi OS system.
+This repository provides a clean folder structure, ready-to-run Compose files, and a **one-liner installer** that bootstraps a fresh Raspberry Pi OS system.
 
 ---
 
-## ✨ Included Services (Container Stack)
+## ✨ Included Stacks
 
-- **Home Assistant** (`homeassistant`)
-- **Mosquitto MQTT Broker** (`mosquitto`)
-- **InfluxDB** (`influxdb`)
-- **Grafana** (`grafana`)
-- **Pi-hole DNS** (`pihole`)
-- **Unbound Recursive DNS Resolver** (`unbound`)
-- **Portainer** (`portainer`)
-- *(Optional)* **Traefik Reverse Proxy** (`traefik`)
+- **DNS** (`containers/dns`)  
+  **Pi-hole** + **Unbound** (recursive resolver; upstream for Pi-hole)
+- **Portainer** (`containers/portainer`)  
+  Docker UI
+- **Home Assistant** (`containers/homeassistant`)  
+  Smart home core (recommended on `network_mode: host`)
+- **MQTT** (`containers/mqtt`)  
+  **Eclipse Mosquitto** broker
+- **Monitoring** (`containers/monitoring`)  
+  **InfluxDB 2.x** + **Grafana**
+
+*(Optional later)* **Traefik** (reverse proxy / HTTPS). Intentionally not part of the minimal setup.
 
 ---
 
-## 🎯 Goals of this Repo
+## 🎯 Goals
 
 - Minimal complexity (easy to understand and maintain)
 - Reproducible setup (works the same on every Pi)
-- Clean Docker Compose structure (one stack per folder)
-- Easy extension (add more services later without redesigning everything)
-- Suitable for Home Assistant + Energy Monitoring setups
+- One stack per folder (clear separation)
+- Easy to extend (add new stacks without redesign)
+- Suitable foundation for Home Assistant + energy monitoring
 
 ---
 
 ## 📁 Repository Structure
 
-Example layout:
+Current layout (simplified):
 
-```
+```text
 pi-homelab/
 ├─ README.md
 ├─ install.sh
-├─ containers/
-│  ├─ dns/
-│  │  ├─ docker-compose.yml
-│  │  ├─ .env.example
-│  │  ├─ pihole/
-│  │  │  └─ etc-pihole/
-│  │  └─ unbound/
-│  │     └─ unbound.conf
-│  ├─ portainer/
-│  │  ├─ docker-compose.yml
-│  │  └─ .env.example
-│  ├─ homeassistant/
-│  │  ├─ docker-compose.yml
-│  │  └─ .env.example
-│  ├─ mqtt/
-│  │  ├─ docker-compose.yml
-│  │  └─ mosquitto.conf
-│  ├─ influxdb/
-│  │  ├─ docker-compose.yml
-│  │  └─ .env.example
-│  └─ grafana/
-│     ├─ docker-compose.yml
-│     └─ .env.example
-└─ docs/
-   └─ cheatsheet.md
+├─ LICENSE
+└─ containers/
+   ├─ dns/
+   │  ├─ docker-compose.yml
+   │  ├─ .env.example
+   │  ├─ pihole/
+   │  │  └─ etc-pihole/        (persisted data; contains .gitkeep)
+   │  └─ unbound/
+   │     └─ config/
+   │        └─ 00-pihole.conf  (unbound config fragment)
+   ├─ homeassistant/
+   │  ├─ docker-compose.yml
+   │  ├─ .env.example
+   │  └─ config/               (contains .gitkeep)
+   ├─ mqtt/
+   │  ├─ docker-compose.yml
+   │  ├─ .env.example
+   │  └─ mosquitto/
+   │     ├─ config/mosquitto.conf
+   │     ├─ data/              (contains .gitkeep)
+   │     └─ log/               (contains .gitkeep)
+   ├─ monitoring/
+   │  ├─ docker-compose.yml
+   │  ├─ .env.example
+   │  ├─ influxdb/
+   │  │  ├─ config/            (contains .gitkeep)
+   │  │  └─ data/              (contains .gitkeep)
+   │  └─ grafana/
+   │     └─ data/              (contains .gitkeep)
+   └─ portainer/
+      └─ docker-compose.yml
 ```
 
-Each stack is self-contained and can be started independently.
+### Why `.gitkeep`?
+Git does not track empty directories. We keep bind-mount directories in the repo using `.gitkeep` so the installer can create the same structure reliably on a fresh machine.
 
 ---
 
-## 🚀 Installation (Raspberry Pi OS)
+## 🚀 Installation (One-liner)
 
-### 1) Clone the repo
-
-```bash
-git clone https://github.com/<your-user>/pi-homelab.git
-cd pi-homelab
-```
-
-### 2) Run install script (optional)
+The installer downloads this repo as a tarball (no `git clone` needed) and installs it to `/opt/pi-homelab`.
 
 ```bash
-chmod +x install.sh
-./install.sh
+wget -qO- "https://raw.githubusercontent.com/<OWNER>/pi-homelab/main/install.sh" | sudo bash
 ```
 
-The install script is intended to:
+You can override defaults (optional):
 
-- install Docker + Docker Compose
-- create `/opt/containers/`
-- copy all stack folders from `containers/` into `/opt/containers/`
-- copy `.env.example` → `.env` if missing
-- set correct permissions
+```bash
+wget -qO- "https://raw.githubusercontent.com/<OWNER>/pi-homelab/main/install.sh" |   sudo REPO_OWNER="<OWNER>" REPO_REF="main" INSTALL_DIR="/opt/pi-homelab" bash
+```
 
 ---
 
-## 🧩 Starting Services
+## 🧰 What `install.sh` does
 
-After installation, stacks are located under:
+- Installs Docker Engine + Compose plugin (if missing)
+- Enables and starts Docker service
+- Adds the “real” user to the `docker` group (so you can run docker without sudo)
+- Downloads the repo as a tarball and installs/syncs to:
+  - **`/opt/pi-homelab`** (default)
+- Bootstraps `.env` files:
+  - Copies `.env.example` → `.env` **only if `.env` is missing**
+- Ensures bind-mount **files** exist (touches missing files if referenced by compose)
+- Fixes ownership so day-to-day operations work without sudo:
+  - `chown -R <user>:<group> /opt/pi-homelab`
 
-```
-/opt/containers/<stack-name>
-```
+At the end, the script prints the generated / bootstrapped credentials (where applicable).
 
-Example:
+---
+
+## 🔧 Environment Variables (`.env`)
+
+Each stack may provide a `.env.example`. After install, you’ll find `.env` next to the stack compose file.
+
+### DNS stack (`containers/dns/.env`)
+- `PIHOLE_WEBPASSWORD`  
+  Password for the Pi-hole admin UI
+
+*(Pi-hole v6 uses `FTLCONF_*` variables inside the compose file; the password is injected from `.env`.)*
+
+### Monitoring stack (`containers/monitoring/.env`)
+
+InfluxDB (initial setup):
+- `INFLUXDB_USERNAME` (default: `admin`)
+- `INFLUXDB_PASSWORD` (generated by installer if still set to `CHANGEME...`)
+- `INFLUXDB_ORG` (e.g. `pi-homelab`)
+- `INFLUXDB_BUCKET` (e.g. `homeassistant`)
+- `INFLUXDB_ADMIN_TOKEN` (generated by installer if still set to `CHANGEME...`)
+
+Grafana:
+- `GRAFANA_ADMIN_USER` (default: `admin`)
+- `GRAFANA_ADMIN_PASSWORD` (generated by installer if still set to `CHANGEME...`)
+
+### MQTT stack (`containers/mqtt/.env`)
+Usually empty/minimal (depends on your compose). If you add auth later, put credentials here.
+
+### Home Assistant stack (`containers/homeassistant/.env`)
+Typically contains:
+- `TZ` (e.g. `Europe/Berlin`)
+
+---
+
+## ▶️ Starting the Stacks
+
+Go into the stack directory and start it:
 
 ```bash
-cd /opt/containers/dns
+cd /opt/pi-homelab/containers/dns
 docker compose up -d
-```
-
-Check status:
-
-```bash
 docker compose ps
 ```
 
-View logs:
-
-```bash
-docker compose logs -f
-```
-
-Stop stack:
-
-```bash
-docker compose down
-```
-
----
-
-## 🛠️ Configuration
-
-### Environment Files
-
-Most stacks use a `.env` file.
-
-Example:
-
-```bash
-cp .env.example .env
-nano .env
-```
-
----
-
-## 🧠 Recommended Startup Order
-
-Suggested order for first deployment:
+Recommended first-time startup order:
 
 1. `dns` (Pi-hole + Unbound)
 2. `portainer`
 3. `homeassistant`
 4. `mqtt`
-5. `influxdb`
-6. `grafana`
-7. *(optional)* `traefik`
+5. `monitoring` (InfluxDB + Grafana)
+
+Update images later:
+
+```bash
+docker compose pull
+docker compose up -d
+```
 
 ---
 
-## 🔒 Notes about DNS (Pi-hole + Unbound)
+## 🔎 Quick Health Checks
 
-Pi-hole uses Unbound as upstream DNS resolver.
+Pi-hole UI:
+- `http://<pi-ip>/admin`
 
-This setup provides:
+Portainer:
+- `http://<pi-ip>:9000` (or whatever your compose exposes)
 
-- local DNS filtering (ads, tracking)
-- recursive DNS resolution (no third-party upstream resolver needed)
-- optional DNSSEC validation
-
----
-
-## 📊 Notes about Metrics (InfluxDB + Grafana)
-
-InfluxDB is intended as long-term storage for:
-
-- Home Assistant sensor history
-- Shelly energy meter data
-- MQTT sensor streams
-
-Grafana is used for:
-
-- dashboards
-- energy monitoring visualization
-- long-term trend analytics
+DNS tests (from a client using Pi-hole as DNS):
+```bash
+nslookup heise.de
+nslookup ipv6.google.com
+```
 
 ---
 
-## 🧰 Portainer
+## 🧠 Notes on Networking
 
-Portainer provides a web UI to manage Docker containers.
-
-Default access:
-
-- `https://<pi-ip>:9443`
+- **Home Assistant** commonly runs with `network_mode: host` so it can discover devices (mDNS, SSDP, etc.) without extra complexity.
+- Other stacks can stay on Docker’s default bridge network unless you have a reason to segment them.
+- If you later introduce Traefik or cross-stack routing, you can add a shared network then.
 
 ---
 
-## 🌐 Optional Traefik (Future)
+## 🔄 System Updates
 
-Traefik can be added later for:
-
-- HTTPS reverse proxy
-- local domains like `pihole.home`, `grafana.home`, `ha.home`
-- internal TLS using a custom CA
-
-This is intentionally optional to keep the base setup minimal.
-
----
-
-## 📌 System Updates
-
-Recommended update cycle:
-
+### Raspberry Pi OS updates
+Run occasionally:
 ```bash
 sudo apt update
 sudo apt upgrade -y
 ```
 
-Docker containers do not need to be stopped during apt upgrades in most cases.
-
-To update container images:
-
+### Container updates
+Per stack:
 ```bash
 docker compose pull
 docker compose up -d
@@ -230,11 +220,14 @@ docker compose up -d
 
 ## 📜 License
 
-This repository is intended for personal / homelab use.
-Feel free to fork and adapt it for your own setup.
+This project is licensed under the **MIT License**. See `LICENSE`.
+
+*(License makes sense even for homelab repos because it clarifies reuse/redistribution rules if you share it with others.)*
 
 ---
 
-## 👨‍🔧 Author Notes
+## 👤 Author Notes
 
-Built and tested for Raspberry Pi OS (Debian based) with a Raspberry Pi 4 booting from SSD.
+Designed for Raspberry Pi OS (Debian-based) and tested on Raspberry Pi 4 booting from SSD.
+
+Happy homelabbing!

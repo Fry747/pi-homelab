@@ -1,6 +1,6 @@
 services:
   influxdb:
-    image: influxdb:2.7
+    image: influxdb:2
     container_name: influxdb
     restart: unless-stopped
     ports:
@@ -18,7 +18,7 @@ services:
       - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUXDB_ADMIN_TOKEN}
 
   grafana:
-    image: grafana/grafana:11.2.0
+    image: grafana/grafana:12.3
     container_name: grafana
     restart: unless-stopped
     ports:

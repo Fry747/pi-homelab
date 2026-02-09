@@ -3,8 +3,6 @@ services:
     image: crazymax/unbound:latest
     container_name: unbound
     restart: unless-stopped
-    networks:
-      - dns_net
     ports:
       - target: 5053
         published: 5053
@@ -15,7 +13,7 @@ services:
     volumes:
       - "./unbound/config:/config:ro"
     healthcheck:
-      test: ["CMD-SHELL", "drill @127.0.0.1 -p 5335 cloudflare.com >/dev/null 2>&1"]
+      test: ["CMD-SHELL", "drill @127.0.0.1 -p 5053 cloudflare.com >/dev/null 2>&1"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -27,8 +25,6 @@ services:
     restart: unless-stopped
     depends_on:
       - unbound
-    networks:
-      - dns_net
     ports:
       # DNS Ports
       - "53:53/tcp"
@@ -53,10 +49,6 @@ services:
       FTLCONF_dns_upstreams: "unbound#5053"
       # Reverse server - If not configured as your DHCP server, Pi-hole typically won't be able to determine the names of devices on your local network. As a result, tables such as Top Clients will only show IP addresses.
       FTLCONF_dns_revServers: "${PIHOLE_REV_SERVERS}"
-      # Optional: Cache size - The number of entries that the DNS resolver will keep in its cache. Setting this to a higher value can improve performance, but it will also use more memory. The default is 1000. Setting it to 0 will disable caching.
-      FTLCONF_dns_cache_size: "10000"
-      # Optional: Max concurrent queries - The maximum number of concurrent DNS queries that dnsmasq can handle. Setting this to a higher value can improve performance, but it will also use more memory. The default is 150. Setting it to 0 will allow an unlimited number of concurrent queries.
-      FTLCONF_dns_dnsmasq_max_concurrent_queries: "300"
     # Volumes store your data between container upgrades
     volumes:
       # For persisting Pi-hole's databases and common configuration file
@@ -71,7 +63,3 @@ services:
       #- SYS_TIME
       # Optional, if Pi-hole should get some more processing time
       - SYS_NICE
-
-networks:
-  dns_net:
-    driver: bridge
