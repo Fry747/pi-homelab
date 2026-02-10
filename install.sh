@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -euo pipefail
+cd / || true
 
 # -----------------------------------------------------------------------------
 # pi-homelab installer (minimal + dynamic containers scan)
@@ -132,12 +133,15 @@ install_docker() {
     return
   fi
 
+  export DEBIAN_FRONTEND=noninteractive
+
   log "Installing Docker (Debian/Raspberry Pi OS)..."
   apt-get update -y
   apt-get install -y ca-certificates curl gnupg lsb-release
 
   install -m 0755 -d /etc/apt/keyrings
-  curl -fsSL https://download.docker.com/linux/debian/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+  curl -fsSL https://download.docker.com/linux/debian/gpg \
+    | gpg --dearmor --yes -o /etc/apt/keyrings/docker.gpg
   chmod a+r /etc/apt/keyrings/docker.gpg
 
   local arch codename
