@@ -175,15 +175,14 @@ download_repo_tarball() {
   tmpdir="$(mktemp -d)"
   url="https://codeload.github.com/${REPO_OWNER}/${REPO_NAME}/tar.gz/${REPO_REF}"
 
-  log "Downloading repo tarball: ${REPO_OWNER}/${REPO_NAME}@${REPO_REF}"
-  log "URL: ${url}"
+  echo -e "\n[+] Downloading repo tarball: ${REPO_OWNER}/${REPO_NAME}@${REPO_REF}" >&2
+  echo -e "[+] URL: ${url}" >&2
 
   curl -fsSL "$url" -o "${tmpdir}/repo.tar.gz" || die "Failed to download tarball. Check REPO_OWNER/REPO_NAME/REPO_REF."
 
-  log "Extracting..."
+  echo -e "\n[+] Extracting..." >&2
   tar -xzf "${tmpdir}/repo.tar.gz" -C "$tmpdir"
 
-  # Tarball root folder name is usually "${REPO_NAME}-${REPO_REF}"
   local src_dir
   src_dir="$(find "$tmpdir" -maxdepth 1 -type d -name "${REPO_NAME}-*" | head -n1)"
   [[ -n "${src_dir:-}" ]] || die "Could not find extracted repo directory in tarball."
@@ -199,6 +198,7 @@ sync_to_install_dir() {
 
   # Use rsync if available, else fallback to cp -a
   if need_cmd rsync; then
+    log "DEBUG src_dir='$src_dir'"
     rsync -a --delete "${src_dir}/" "${INSTALL_DIR}/"
   else
     warn "rsync not found; using cp -a (may not delete removed files)."
