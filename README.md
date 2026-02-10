@@ -2,7 +2,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Raspberry%20Pi%20%2F%20ARM64%20%7C%20ARMv7-blue)
 ![OS](https://img.shields.io/badge/os-Raspberry%20Pi%20OS%20(Debian)-green)
-![Compose](https://img.shields.io/badge/docker-compose-v2+-informational)
+![Docker Compose](https://img.shields.io/badge/docker%20compose-v2%2B-informational)
 ![License](https://img.shields.io/badge/license-MIT-yellow)
 
 A lightweight, reproducible **Raspberry Pi homelab stack** built around **Docker Compose**.
@@ -89,13 +89,7 @@ Git does not track empty directories. We keep bind-mount directories in the repo
 The installer downloads this repo as a tarball (no `git clone` needed) and installs it to `/opt/pi-homelab`.
 
 ```bash
-wget -qO- "https://raw.githubusercontent.com/<OWNER>/pi-homelab/main/install.sh" | sudo bash
-```
-
-You can override defaults (optional):
-
-```bash
-wget -qO- "https://raw.githubusercontent.com/<OWNER>/pi-homelab/main/install.sh" |   sudo REPO_OWNER="<OWNER>" REPO_REF="main" INSTALL_DIR="/opt/pi-homelab" bash
+wget -qO- "https://raw.githubusercontent.com/fry747/pi-homelab/main/install.sh" | sudo bash
 ```
 
 ---
@@ -221,8 +215,6 @@ docker compose up -d
 ## 📜 License
 
 This project is licensed under the **MIT License**. See `LICENSE`.
-
-*(License makes sense even for homelab repos because it clarifies reuse/redistribution rules if you share it with others.)*
 
 ---
 
