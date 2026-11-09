@@ -7,7 +7,7 @@
 
 A lightweight, reproducible **Raspberry Pi homelab stack** built around **Docker Compose**.
 
-This repository provides a clean folder structure, ready-to-run Compose files, and a **one-liner installer** that bootstraps a fresh Raspberry Pi OS system.
+This repository provides Docker Compose templates and an installer for a fresh Raspberry Pi OS setup. See the [GitOps runbook](docs/gitops.md) for reviewing and deploying changes, handling backups, and using Codex with SSH and Home Assistant MCP.
 
 ---
 
@@ -84,12 +84,12 @@ Git does not track empty directories. We keep bind-mount directories in the repo
 
 ---
 
-## 🚀 Installation (One-liner)
+## 🚀 Fresh installation
 
-The installer downloads this repo as a tarball (no `git clone` needed) and installs it to `/opt/pi-homelab`.
+Review the script in a local Git checkout of a published revision before running it. The installer downloads that revision as a tarball and requires a new target directory (default `/opt/pi-homelab`).
 
 ```bash
-wget -qO- "https://raw.githubusercontent.com/fry747/pi-homelab/main/install.sh" | sudo bash
+sudo env REPO_REF="$(git rev-parse HEAD)" bash install.sh
 ```
 
 ---
@@ -98,16 +98,12 @@ wget -qO- "https://raw.githubusercontent.com/fry747/pi-homelab/main/install.sh" 
 
 - Installs Docker Engine + Compose plugin (if missing)
 - Enables and starts Docker service
-- Adds the “real” user to the `docker` group (so you can run docker without sudo)
-- Downloads the repo as a tarball and installs/syncs to:
+- Downloads the selected revision and copies it to a new directory:
   - **`/opt/pi-homelab`** (default)
 - Bootstraps `.env` files:
-  - Copies `.env.example` → `.env` **only if `.env` is missing**
-- Ensures bind-mount **files** exist (touches missing files if referenced by compose)
-- Fixes ownership so day-to-day operations work without sudo:
-  - `chown -R <user>:<group> /opt/pi-homelab`
-
-At the end, the script prints the generated / bootstrapped credentials (where applicable).
+  - Creates private `.env` files from `.env.example` with mode `600`
+  - Writes generated credentials directly to those files
+- Sets the owner of the new directory and files to the invoking administrator
 
 ---
 
@@ -118,6 +114,8 @@ Each stack may provide a `.env.example`. After install, you’ll find `.env` nex
 ### DNS stack (`containers/dns/.env`)
 - `PIHOLE_WEBPASSWORD`  
   Password for the Pi-hole admin UI
+- `PIHOLE_DATA_DIR`
+  Optional host path for the Pi-hole data mount. When updating an existing installation, verify this against the running container first.
 
 *(Pi-hole v6 uses `FTLCONF_*` variables inside the compose file; the password is injected from `.env`.)*
 
@@ -145,12 +143,13 @@ Typically contains:
 
 ## ▶️ Starting the Stacks
 
-Go into the stack directory and start it:
+For a fresh installation, go into the stack directory, review the local settings, and start it as an administrator:
 
 ```bash
 cd /opt/pi-homelab/containers/dns
-docker compose up -d
-docker compose ps
+sudo docker compose config --quiet
+sudo docker compose up -d
+sudo docker compose ps
 ```
 
 Recommended first-time startup order:
@@ -160,13 +159,6 @@ Recommended first-time startup order:
 3. `homeassistant`
 4. `mqtt`
 5. `monitoring` (InfluxDB + Grafana)
-
-Update images later:
-
-```bash
-docker compose pull
-docker compose up -d
-```
 
 ---
 
@@ -204,11 +196,7 @@ sudo apt upgrade -y
 ```
 
 ### Container updates
-Per stack:
-```bash
-docker compose pull
-docker compose up -d
-```
+Review, validate, and deploy one stack at a time. Follow the [GitOps runbook](docs/gitops.md#review-and-deploy-one-stack-at-a-time).
 
 ---
 

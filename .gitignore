@@ -12,6 +12,7 @@ desktop.ini
 
 .vscode/
 .idea/
+/.codex/
 *.swp
 *.swo
 *.tmp
@@ -34,6 +35,10 @@ log/
 
 secrets/
 secret/
+secrets.yaml
+secrets.yml
+.ssh/
+*.ppk
 *.secret
 *.key
 *.pem
@@ -65,32 +70,14 @@ venv/
 # ------------------------------------------
 # Home Assistant (VERY IMPORTANT)
 # ------------------------------------------
-containers/homeassistant/config/.storage/
-containers/homeassistant/config/home-assistant_v2.db
-containers/homeassistant/config/home-assistant_v2.db-shm
-containers/homeassistant/config/home-assistant_v2.db-wal
-containers/homeassistant/config/home-assistant.log*
-containers/homeassistant/config/backup/
-containers/homeassistant/config/backups/
-containers/homeassistant/config/tts/
-containers/homeassistant/config/deps/
-containers/homeassistant/config/.cloud/
-containers/homeassistant/config/.uuid
-containers/homeassistant/config/secrets.yaml
-containers/homeassistant/config/known_devices.yaml
-containers/homeassistant/config/*.db
-containers/homeassistant/config/*.db-shm
-containers/homeassistant/config/*.db-wal
-
-# Keep configuration.yaml and automations/scripts
-!containers/homeassistant/config/configuration.yaml
-!containers/homeassistant/config/automations.yaml
-!containers/homeassistant/config/scripts.yaml
-!containers/homeassistant/config/scenes.yaml
+# Live /config is writable by HA. Put reviewed, secret-free YAML in a separate tree.
+/containers/homeassistant/config/*
+!/containers/homeassistant/config/.gitkeep
 
 # ------------------------------------------
 # Pi-hole (data should NOT be committed)
 # ------------------------------------------
+/containers/dns/etc-pihole/
 containers/dns/pihole/etc-pihole/*
 !containers/dns/pihole/etc-pihole/.gitkeep
 
@@ -106,17 +93,19 @@ containers/dns/pihole/etc-dnsmasq.d/*
 # ------------------------------------------
 # Unbound (optional cache/runtime)
 # ------------------------------------------
-containers/dns/unbound/config/*.key
-containers/dns/unbound/config/*.pem
-containers/dns/unbound/config/var/
-containers/dns/unbound/config/root.key
+/containers/dns/unbound/config/*
+!/containers/dns/unbound/config/00-pihole.conf
 
 # ------------------------------------------
 # Mosquitto
 # ------------------------------------------
+/containers/mqtt/mosquitto/config/*
+!/containers/mqtt/mosquitto/config/mosquitto.conf
+
 containers/mqtt/mosquitto/data/*
 !containers/mqtt/mosquitto/data/.gitkeep
 
+!containers/mqtt/mosquitto/log/
 containers/mqtt/mosquitto/log/*
 !containers/mqtt/mosquitto/log/.gitkeep
 
@@ -161,9 +150,17 @@ containers/traefik/certs/*.crt
 backup/
 backups/
 *.tar
-*.tar.gz
+*.gz
+*.tgz
+*.xz
+*.zst
+*.bz2
 *.zip
-*.bak
+*.7z
+*.img
+*.dump
+*.sql
+home_assistant_backup_emergency_kit_*
 
 # ------------------------------------------
 # Local exports
@@ -172,6 +169,9 @@ exports/
 *.csv
 *.json
 *.db
+*.db-shm
+*.db-wal
+*.sqlite*
 
 # ------------------------------------------
 # Temporary runtime folders
