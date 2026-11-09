@@ -5,18 +5,15 @@ cd / || true
 # -----------------------------------------------------------------------------
 # pi-homelab installer (minimal + dynamic containers scan)
 #
-# Usage (one-liner):
-#   wget -qO- "https://raw.githubusercontent.com/<OWNER>/pi-homelab/main/install.sh" | sudo bash
+# Usage from a reviewed checkout:
+#   sudo env REPO_REF=<reviewed-commit> bash install.sh
 #
 # What it does:
 # - Installs Docker + Docker Compose plugin (if missing)
 # - Downloads repo as tarball (no git clone needed)
-# - Installs to /opt/pi-homelab
-# - Bootstraps .env from .env.example (per compose dir), without overwriting existing .env
-# - Ensures bind-mount FILES exist (touch), directories already exist via .gitkeep in repo
-# - Generates secrets (Pi-hole / InfluxDB / Grafana) ONLY if values are missing/empty/CHANGEME*
-# - Prints generated secrets at the end (only those newly generated)
-# - Fixes ownership so you don't need sudo for day-to-day ops
+# - Installs to a new directory (/opt/pi-homelab by default)
+# - Bootstraps private .env files and generates credentials for supported stacks
+# - Gives the invoking user ownership of the new files
 # -----------------------------------------------------------------------------
 
 # ====== CONFIG =============================================================
@@ -27,10 +24,8 @@ INSTALL_DIR="${INSTALL_DIR:-/opt/pi-homelab}"
 # ============================================================================
 
 # Determine the "real" user (so files aren't owned by root after sudo)
-REAL_USER="${SUDO_USER:-${USER}}"
+REAL_USER="${SUDO_USER:-$(id -un)}"
 REAL_GROUP="$(id -gn "$REAL_USER" 2>/dev/null || echo "$REAL_USER")"
-REAL_HOME="$(getent passwd "$REAL_USER" | cut -d: -f6 || true)"
-REAL_HOME="${REAL_HOME:-/home/$REAL_USER}"
 
 log()  { echo -e "\n[+] $*"; }
 warn() { echo -e "\n[!] $*" >&2; }
@@ -49,9 +44,6 @@ need_cmd() {
 # -----------------------------------------------------------------------------
 # Secret generation helpers
 # -----------------------------------------------------------------------------
-# We'll remember newly generated secrets and print them at the end.
-declare -A GENERATED_SECRETS
-
 # Generate a decent password (URL/ENV-safe enough)
 gen_password() {
   if need_cmd openssl; then
@@ -74,17 +66,14 @@ gen_token() {
 # - KEY is missing OR
 # - current value is empty OR
 # - current value starts with "CHANGEME"
-# If we generated a new value, remember it in GENERATED_SECRETS.
 set_env_if_empty_or_changeme() {
   local env_file="$1"
   local key="$2"
   local value="$3"
-  local origin="$4"   # label for output, e.g. "dns/PIHOLE_WEBPASSWORD"
 
   # If key missing -> append
   if ! grep -qE "^${key}=" "$env_file"; then
     echo "${key}=${value}" >> "$env_file"
-    GENERATED_SECRETS["$origin"]="$value"
     return 0
   fi
 
@@ -98,7 +87,6 @@ set_env_if_empty_or_changeme() {
   if [[ -z "${cur}" || "${cur}" == CHANGEME* ]]; then
     # Replace line
     sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"
-    GENERATED_SECRETS["$origin"]="$value"
   fi
 }
 
@@ -110,20 +98,20 @@ generate_stack_secrets() {
 
   # DNS stack (.env located in containers/dns/.env)
   if [[ "$dir" == *"/containers/dns" ]]; then
-    set_env_if_empty_or_changeme "$env_file" "PIHOLE_WEBPASSWORD" "$(gen_password)" "dns/PIHOLE_WEBPASSWORD"
+    set_env_if_empty_or_changeme "$env_file" "PIHOLE_WEBPASSWORD" "$(gen_password)"
   fi
 
   # Monitoring stack (.env located in containers/monitoring/.env)
   if [[ "$dir" == *"/containers/monitoring" ]]; then
     # Keep sane defaults if missing/changeme
-    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_USERNAME" "admin" "monitoring/INFLUXDB_USERNAME"
-    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_PASSWORD" "$(gen_password)" "monitoring/INFLUXDB_PASSWORD"
-    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_ORG" "pi-homelab" "monitoring/INFLUXDB_ORG"
-    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_BUCKET" "homeassistant" "monitoring/INFLUXDB_BUCKET"
-    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_ADMIN_TOKEN" "$(gen_token)" "monitoring/INFLUXDB_ADMIN_TOKEN"
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_USERNAME" "admin"
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_PASSWORD" "$(gen_password)"
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_ORG" "pi-homelab"
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_BUCKET" "homeassistant"
+    set_env_if_empty_or_changeme "$env_file" "INFLUXDB_ADMIN_TOKEN" "$(gen_token)"
 
-    set_env_if_empty_or_changeme "$env_file" "GRAFANA_ADMIN_USER" "admin" "monitoring/GRAFANA_ADMIN_USER"
-    set_env_if_empty_or_changeme "$env_file" "GRAFANA_ADMIN_PASSWORD" "$(gen_password)" "monitoring/GRAFANA_ADMIN_PASSWORD"
+    set_env_if_empty_or_changeme "$env_file" "GRAFANA_ADMIN_USER" "admin"
+    set_env_if_empty_or_changeme "$env_file" "GRAFANA_ADMIN_PASSWORD" "$(gen_password)"
   fi
 }
 
@@ -156,11 +144,6 @@ EOF
   apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 
   systemctl enable --now docker
-
-  log "Adding user '$REAL_USER' to docker group (so you can run docker without sudo)..."
-  if getent group docker >/dev/null; then
-    usermod -aG docker "$REAL_USER" || true
-  fi
 }
 
 ensure_compose() {
@@ -175,8 +158,8 @@ ensure_compose() {
 }
 
 download_repo_tarball() {
-  local tmpdir url
-  tmpdir="$(mktemp -d)"
+  local tmpdir="$1"
+  local url
   url="https://codeload.github.com/${REPO_OWNER}/${REPO_NAME}/tar.gz/${REPO_REF}"
 
   echo -e "\n[+] Downloading repo tarball: ${REPO_OWNER}/${REPO_NAME}@${REPO_REF}" >&2
@@ -194,20 +177,13 @@ download_repo_tarball() {
   echo "$src_dir"
 }
 
-sync_to_install_dir() {
+copy_to_new_install_dir() {
   local src_dir="$1"
 
   log "Installing to ${INSTALL_DIR}"
-  mkdir -p "$INSTALL_DIR"
-
-  # Use rsync if available, else fallback to cp -a
-  if need_cmd rsync; then
-    log "DEBUG src_dir='$src_dir'"
-    rsync -a --delete "${src_dir}/" "${INSTALL_DIR}/"
-  else
-    warn "rsync not found; using cp -a (may not delete removed files)."
-    cp -a "${src_dir}/." "${INSTALL_DIR}/"
-  fi
+  mkdir -p -- "$(dirname -- "$INSTALL_DIR")"
+  mkdir -- "$INSTALL_DIR" || die "Installation requires a new target directory."
+  cp -a -- "${src_dir}/." "${INSTALL_DIR}/"
 }
 
 fix_ownership() {
@@ -216,7 +192,7 @@ fix_ownership() {
 }
 
 bootstrap_env_files() {
-  log "Bootstrapping .env from .env.example (without overwriting existing .env)"
+  log "Creating private .env files from .env.example"
 
   # Look for .env.example next to docker-compose.yml (or anywhere under containers/)
   while IFS= read -r -d '' env_example; do
@@ -224,114 +200,11 @@ bootstrap_env_files() {
     dir="$(dirname "$env_example")"
     env_file="${dir}/.env"
 
-    # Do not overwrite existing .env
-    if [[ ! -f "$env_file" ]]; then
-      cp -n "$env_example" "$env_file"
-      chown "${REAL_USER}:${REAL_GROUP}" "$env_file" || true
-      chmod 600 "$env_file" || true
-      log "Created: ${env_file} (from .env.example)"
-    fi
-
-    # Always ensure secrets are set if missing/empty/CHANGEME*
-    if [[ -f "$env_file" ]]; then
-      generate_stack_secrets "$env_file"
-    fi
-  done < <(find "${INSTALL_DIR}/containers" -type f -name ".env.example" -print0 2>/dev/null || true)
-}
-
-# Ensure bind-mount FILES exist (directories should exist via .gitkeep in repo)
-# This parses volume lines like:
-#   - ./mosquitto/config/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
-# and if the *left side* is a file path and doesn't exist -> touch it.
-ensure_bind_mount_files() {
-  log "Ensuring bind-mount FILES exist (touch missing files)."
-
-  local compose
-  while IFS= read -r -d '' compose; do
-    local base_dir
-    base_dir="$(dirname "$compose")"
-
-    # Extract volume sources that look like relative paths starting with ./
-    # This is intentionally conservative to avoid doing something surprising.
-    while IFS= read -r src; do
-      # normalize
-      src="${src%%:*}"         # left of first colon
-      src="${src#- }"          # strip leading '- '
-      src="${src%\"}"; src="${src#\"}"
-      src="${src%\'}"; src="${src#\'}"
-
-      # Only handle relative bind mounts
-      [[ "$src" == ./* ]] || continue
-
-      local abs="${base_dir}/${src#./}"
-
-      # If it ends with a slash, it's a dir (skip)
-      [[ "$abs" == */ ]] && continue
-
-      # If it's clearly a directory in repo, skip
-      if [[ -d "$abs" ]]; then
-        continue
-      fi
-
-      # Create parent dir if missing (shouldn't happen with .gitkeep, but safe)
-      local parent
-      parent="$(dirname "$abs")"
-      mkdir -p "$parent"
-
-      if [[ ! -e "$abs" ]]; then
-        touch "$abs"
-        chown "${REAL_USER}:${REAL_GROUP}" "$abs" || true
-        chmod 644 "$abs" || true
-        log "Touched missing file: ${abs}"
-      fi
-    done < <(
-      # Grab lines containing "- ./something:" under volumes blocks (rough parse, good enough for homelab compose files)
-      grep -RInh -- "$compose" -e '^[[:space:]]*-[[:space:]]*\./[^:]*:' \
-        | sed -E 's/^[[:space:]]*-[[:space:]]*//'
-    )
-  done < <(find "${INSTALL_DIR}/containers" -type f \( -name "docker-compose.yml" -o -name "compose.yml" \) -print0 2>/dev/null || true)
-}
-
-print_generated_secrets() {
-  if [[ "${#GENERATED_SECRETS[@]}" -eq 0 ]]; then
-    log "No new secrets generated (existing values were kept)."
-    return
-  fi
-
-  cat <<EOF
-
-===============================================================================
-🔐 Newly generated secrets (saved into the respective .env files)
-
-IMPORTANT:
-- Store these somewhere safe (password manager).
-- They are already written to the .env files with permissions 600.
-- Anyone with access to ${INSTALL_DIR} can potentially read them.
-
-EOF
-
-  # Stable-ish order (nice to read)
-  local keys=(
-    "dns/PIHOLE_WEBPASSWORD"
-    "monitoring/INFLUXDB_USERNAME"
-    "monitoring/INFLUXDB_PASSWORD"
-    "monitoring/INFLUXDB_ORG"
-    "monitoring/INFLUXDB_BUCKET"
-    "monitoring/INFLUXDB_ADMIN_TOKEN"
-    "monitoring/GRAFANA_ADMIN_USER"
-    "monitoring/GRAFANA_ADMIN_PASSWORD"
-  )
-
-  for k in "${keys[@]}"; do
-    if [[ -n "${GENERATED_SECRETS[$k]:-}" ]]; then
-      printf "  %-35s %s\n" "${k}:" "${GENERATED_SECRETS[$k]}"
-    fi
-  done
-
-  cat <<EOF
-===============================================================================
-
-EOF
+    [[ ! -e "$env_file" && ! -L "$env_file" ]] || die "Unexpected .env in installation archive."
+    install -m 0600 -- "$env_example" "$env_file"
+    generate_stack_secrets "$env_file"
+    log "Created: ${env_file} (from .env.example)"
+  done < <(find "${INSTALL_DIR}/containers" -type f -name ".env.example" -print0)
 }
 
 print_next_steps() {
@@ -344,23 +217,21 @@ Repo installed to:
   ${INSTALL_DIR}
 
 IMPORTANT:
-- You were added to the 'docker' group (if Docker was installed).
-  You may need to log out/in (or reboot) so group membership applies.
+- Generated credentials are stored in the relevant .env files (mode 600).
+- Run Docker with the privileges of your own administrator account.
 
 Next steps:
 1) Go to a stack directory, review .env, then start:
    cd ${INSTALL_DIR}/containers/dns
-   docker compose up -d
+   sudo docker compose up -d
 
 2) Check status:
-   docker compose ps
+   sudo docker compose ps
 
 3) View logs:
-   docker compose logs -f
+   sudo docker compose logs -f
 
-If you want to update later:
-- re-run this installer (it will re-sync the repo contents)
-- then run 'docker compose pull && docker compose up -d' per stack
+For updates, see docs/gitops.md in the repository.
 
 ===============================================================================
 EOF
@@ -368,6 +239,8 @@ EOF
 
 main() {
   require_root
+  [[ ! -e "$INSTALL_DIR" && ! -L "$INSTALL_DIR" ]] \
+    || die "Target already exists: $INSTALL_DIR. See docs/gitops.md for updates."
 
   if [[ "$REPO_OWNER" == "<OWNER>" ]]; then
     die "Please set REPO_OWNER at the top of this script (or export REPO_OWNER=...)."
@@ -377,16 +250,13 @@ main() {
   ensure_compose
 
   local src_dir
-  src_dir="$(download_repo_tarball)"
+  WORK_DIR="$(mktemp -d)"
+  trap 'rm -rf -- "$WORK_DIR"' EXIT
+  src_dir="$(download_repo_tarball "$WORK_DIR")"
 
-  sync_to_install_dir "$src_dir"
-  fix_ownership
-
+  copy_to_new_install_dir "$src_dir"
   bootstrap_env_files
-  ensure_bind_mount_files
-
-  # Print secrets AFTER env bootstrap & any modifications
-  print_generated_secrets
+  fix_ownership
   print_next_steps
 }
 

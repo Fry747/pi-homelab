@@ -1,0 +1,29 @@
+name: Validate homelab
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - name: Check that ignored files are not tracked
+        run: |
+          if [[ -n "$(git ls-files -ci --exclude-standard)" ]]; then
+            echo "::error::Ignored files are tracked. Review the index locally without printing file contents."
+            exit 1
+          fi
+      - name: Validate installer and Compose templates
+        run: |
+          bash -n install.sh
+          for file in containers/*/docker-compose.yml; do
+            docker compose --env-file "${file%/*}/.env.example" -f "$file" config --quiet
+          done
