@@ -168,11 +168,11 @@ download_repo_tarball() {
   curl -fsSL "$url" -o "${tmpdir}/repo.tar.gz" || die "Failed to download tarball. Check REPO_OWNER/REPO_NAME/REPO_REF."
 
   echo -e "\n[+] Extracting..." >&2
-  tar -xzf "${tmpdir}/repo.tar.gz" -C "$tmpdir"
+  tar -xzf "${tmpdir}/repo.tar.gz" -C "$tmpdir" || die "Failed to extract the installation archive."
 
   local src_dir
   src_dir="$(find "$tmpdir" -maxdepth 1 -type d -name "${REPO_NAME}-*" | head -n1)"
-  [[ -n "${src_dir:-}" ]] || die "Could not find extracted repo directory in tarball."
+  [[ -n "$src_dir" && -d "$src_dir/containers" ]] || die "Installation archive is missing the containers directory."
 
   echo "$src_dir"
 }
@@ -252,7 +252,7 @@ main() {
   local src_dir
   WORK_DIR="$(mktemp -d)"
   trap 'rm -rf -- "$WORK_DIR"' EXIT
-  src_dir="$(download_repo_tarball "$WORK_DIR")"
+  src_dir="$(download_repo_tarball "$WORK_DIR")" || exit 1
 
   copy_to_new_install_dir "$src_dir"
   bootstrap_env_files

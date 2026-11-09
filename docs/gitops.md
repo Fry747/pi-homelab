@@ -49,7 +49,7 @@ First prompt for Codex in VS Code:
 
 Second prompt:
 
-> Review the local branch diff and validate the Compose files using only `.env.example` and `config --quiet`. Report the changed files and checks that ran.
+> Review `git diff origin/main...HEAD` and validate the Compose files using only `.env.example` and `config --quiet`. Report the changed files and checks that ran.
 
 ## Home Assistant MCP
 

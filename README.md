@@ -86,7 +86,7 @@ Git does not track empty directories. We keep bind-mount directories in the repo
 
 ## 🚀 Fresh installation
 
-Review the script in a local Git checkout before running it. The installer downloads the selected revision as a tarball and requires a new target directory (default `/opt/pi-homelab`).
+Review the script in a local Git checkout of a published revision before running it. The installer downloads that revision as a tarball and requires a new target directory (default `/opt/pi-homelab`).
 
 ```bash
 sudo env REPO_REF="$(git rev-parse HEAD)" bash install.sh
